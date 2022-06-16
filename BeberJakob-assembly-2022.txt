@@ -1,0 +1,379 @@
+;Program, ki simulira delovanje ekrana na kavnem avtomatu.
+;Program je bil narejen, testiran na 50kHz, zato je priporocena hitrost poganjanja tudi 50kHz
+;Program je v celoti napisan s strani mene, studenta UP FAMNIT, Jakob-a Beber-ja
+;3.6.2022
+
+JMP main
+
+faza2: DW 0	;pazi, da nemoremo preskociti "faze2-(potrditev izbrane kave)"
+
+;Vsi potrebni stringi za program.
+str11:
+	DB "Izberite kavo:"
+    DB 0
+str12:
+	DB "1 - Cappuchino"
+    DB 0
+str13:
+	DB "2 - Machiatto"
+    DB 0
+str14:
+	DB "3 - Americano"
+    DB 0
+str15:
+	DB "4 - Espresso"
+    DB 0
+str16:
+	DB "5 - Irish"
+    DB 0  
+    
+str21:
+	DB "Izbrali ste:"
+    DB 0
+str22:
+	DB "Za potrditev"
+    DB 0
+str23:
+    DB "pritisnite tipko"
+    DB 0
+str24:
+    DB "-P-"
+    DB 0
+    
+str31:
+	DB "Pripravljam..."
+    DB 0
+    
+str41:
+	DB "Kava"
+    DB 0
+str42:
+	DB "pripravljena."
+    DB 0
+str43:
+    DB "Lep dan"
+    DB 0
+    
+    ;reset funkcija za brisnaje vram-a in registrov
+reset:
+	MOV A, 0
+    MOV A, 3
+	OUT 7
+    MOV A, 0
+    MOV B, 0
+    MOV C, 0
+    MOV D, 0
+    RET
+
+;----------------1.FAZA - (izbira kave)---------------
+main:
+	MOV B, [faza2]	;ce nismo potrdili pravocasno(faza2), moramo resetirati vram
+	CMP B, 1
+    JE ponovno
+	MOV SP , 0x0FFF	;Inicializacija sklada
+	MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str11	;Kazalec na niz
+    MOV D, 2		;Kazalec na celico
+    CALL loop_print	;klic funkcij
+    CALL ena
+    CALL dve
+    CALL tri
+    CALL stiri
+    CALL pet
+    MOV B, 0
+    JMP loop_input  ;skok na "poslusanje" tipkovnice, cakanje input-a
+    
+ponovno:
+	CALL reset
+    MOV [faza2], B
+    RET
+    
+;funckije ki klicejo funkcijo loop_print, na zaslon moznost izbire kave
+ena:
+    MOV C, str12
+    MOV D, 512
+	CALL loop_print
+    RET
+dve:
+    MOV C, str13
+    MOV D, 1024
+    CALL loop_print
+    RET
+tri:
+    MOV C, str14
+    MOV D, 1536
+    CALL loop_print
+    RET   
+stiri:
+    MOV C, str15
+    MOV D, 2048
+    CALL loop_print
+    RET
+pet:
+    MOV C, str16
+    MOV D, 2560
+    CALL loop_print
+    RET
+    
+    ;funkcija ki pise na zaslon
+loop_print:
+    MOV A, D		;Pripravimo naslov celice.
+    OUT 8			; VIDADDR - Aktiviramo celico
+    MOVB AH, [C]	;Pripravimo crko 
+    CMPB AH, 0		;ce smo na koncu stringa, koncamo izpisovanje
+    JE end
+    MOVB AL, 255	;bela barva
+    OUT 9			;Izpisemo znak
+    INC C			;Naslednja crka
+    ADD D, 2		;Naslednja celica
+    JMP loop_print
+end:
+	RET
+    
+
+    
+
+;KEYBOARD INPUT-------polling
+loop_input:
+	INC B
+	IN 5 			;Preberemo status tipkovnice(KBDSTATUS)
+    CMP A, 0 		;Ali je KBDSTATUS prazen?
+    JE loop_input 	;Ce je prazen, preberemo status ponovno
+    AND A, 1		;Zamaskiramo bit za dogodek keydown (A & 0000 0001)
+    CMP A, 1		;Ali je keydown(1)?
+    JE compare_char
+    MOVB [0x1000], 0	;Izbrisemo prvo celico zaslona
+    CMP B, 30000		;Ce uporabnik nic ne pritisne nekaj casa, skocimo nazaj na 1.fazo programa
+    JE main
+    JMP loop_input
+    
+compare_char:
+	IN 6				;Preberemo KBDDATA
+    MOVB [0x1000], AL	;Izpisemo znak
+    MOVB [0x0F00], AL	;Shranimo znak
+    CMPB AL, 0x31		;glede na izbran znak, ustrezno reagiramo
+    JE nasledni_zaslon
+    CMPB AL, 0x32
+    JE nasledni_zaslon 
+    CMPB AL, 0x33
+    JE nasledni_zaslon
+    CMPB AL, 0x34
+    JE nasledni_zaslon
+    CMPB AL, 0x35
+    JE nasledni_zaslon
+    CMPB AL, 0x70		;ca prejmemo znak p, gremo v 3fazo programa
+    JE zazeni_animacijo
+    JMP loop_input   	;ce ne pritisnemo ustrezne tipke, ponovimo cakanje na tipkovnici
+;----------------------------------
+
+    
+	;2.FAZA - potrditveni zaslon   
+nasledni_zaslon:
+	MOV [faza2], 1			;Omogocimo prehod na fazo3, saj se trenutno uspesno vrsi 2.faza programa
+	CALL reset				;ponastavimo vram
+    CALL zgornji_izpis		;klicemo funkcije za izpis novega besedila
+	;izpis prave kave
+	MOVB AL, [0x0F00]
+    CMPB AL, 0x31			;preverimo, katero stevilko(kavo) je uporabnik izbral, in klicemo pravilno
+	JE enka
+    CMPB AL, 0x32
+	JE dvojica
+    CMPB AL, 0x33
+	JE trica
+    CMPB AL, 0x34
+	JE stirica
+    CMPB AL, 0x35
+	JE petka
+    
+    
+    ;samo print zgornjega izpisa
+zgornji_izpis:
+    MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str21	;Kazalec na niz
+    MOV D, 2		;Kazalec na celico
+    CALL loop_print
+    RET
+
+;switch(glede na izbrano kavo)
+enka:
+	CALL ena
+    JMP naprej
+dvojica:
+	CALL dve
+    JMP naprej
+trica:
+	CALL tri
+    JMP naprej
+stirica:
+	CALL stiri
+    JMP naprej
+petka:
+	CALL pet
+	JMP naprej
+    ;funkcija naprej(da se ne ponavlja koda v prejsnem delu)
+naprej:
+	CALL potrditev1
+    CALL potrditev2
+    CALL potrditev3
+    JMP loop_input	;cakamo na uporabnika da potrdi svojo izbiro kave(lahko jo tudi spremeni)
+    
+    
+    ;print spodnje vrstice
+potrditev1:
+	MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str22	;Kazalec na niz
+    MOV D, 3076		;Kazalec na celico
+	CALL loop_print
+    RET
+potrditev2:
+	MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str23	;Kazalec na niz
+    MOV D, 3328		;Kazalec na celico
+	CALL loop_print
+    RET
+potrditev3:
+	MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str24	;Kazalec na niz
+    MOV D, 3596		;Kazalec na celico
+	CALL loop_print
+    RET
+    
+    
+    
+    ;3.FAZA - (animacija)
+zazeni_animacijo:
+	MOV B, [faza2]		
+	CMP B, 1			;preverimo ali je uporabnik res potrdil izbiro na 2.fazi programa
+    JNE loop_input		;ce ni, gremo nazaj, cakati na input tipkovnice
+	CALL reset			;pobrisemo vram
+    CALL kavaPripravlja	;napisemo in narisemo za naslednjo sceno
+    CALL skodelice
+    JMP init_animation	;pricnemo z animacijo
+
+	;print teksta
+kavaPripravlja:
+	MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str31	;Kazalec na niz
+    MOV D, 3074		;Kazalec kje zelimo zaceti
+	CALL loop_print
+    RET
+    
+;-----izris ene "skodelice"---------------------
+skodelice:
+	MOV A, 1		;povemo da bomo delali v text mode
+    OUT 7
+    ;Zgornji del
+    MOV A, 2060			;dolocamo pozicije znakcov, da se skupaj sestavijo v podobo "skodelice"
+    CALL del_skodelice
+    MOV A, 2062
+    CALL del_skodelice
+    MOV A, 2064
+    CALL del_skodelice
+    ;Sredinski del
+    MOV A, 2316
+    CALL del_skodelice
+    MOV A, 2318
+    CALL del_skodelice
+    MOV A, 2320
+    CALL del_skodelice
+    ;Spodnji del(3/3)
+	MOV A, 2572
+    CALL del_skodelice
+    MOV A, 2574
+    CALL del_skodelice
+    MOV A, 2576
+    CALL del_skodelice
+    
+del_skodelice:
+    OUT 8			;VIDADDR (aktiviramo celico)
+    MOVB AH, 240	;del_skodelice rdece barve
+    MOVB AL, 228
+    OUT 9			;VIDDATA (izpisemo)
+    RET
+;---------------Konec izrisa "skodelice"----------------------
+
+
+init_animation:
+	MOV B, 0		;"counter"
+	MOV SP, 0x0FFF	;Inicializiramo sklad.
+	MOV A, 1		;Stevilka besedilnega nacina
+    OUT 7			;VIDMODE = 1
+    
+    MOV D, 526
+    MOV A, D
+    OUT 8			;VIDADDR (aktiviramo celico)
+    MOVB AH, 7	;Krozec bele barve
+    MOVB AL, 140
+    OUT 9			;VIDDATA (izpisemo)
+    
+animation:
+	MOV A, D		;Naslov trenutne celice
+    OUT 8			;VIDADDR
+    MOV A, 0		;Pobrisemo vsebino celice
+    OUT 9			;VIDDATA
+    ADD D, 256		;Premik v novo vrstico
+    CMPB DH, 8		;ko pridemo v vrstico 8, reset
+    JB no_reset
+    MOV D, 526		;Krogec postavimo nazaj na vrh
+no_reset:
+    MOV A, D		;Naslov nove celice
+    OUT 8			;Aktiviramo novo celico
+    MOV A, 0x078C
+    OUT 9			;VIDDATA
+    INC B
+    CMP B, 5000		;"counter - 5000 premikov, nato zakljucimo animacijo"
+    JNE animation
+    JMP faza4
+    
+    
+;----------------4.FAZA - (konec)------------
+faza4:
+	CALL reset			;resetiramo vram
+    CALL kava			;izpisemo vse potrebno na ekran(s klici teh funkcij)
+    CALL pripravljeno
+    CALL lepdan
+    CALL smiley
+    HLT					;KONEC programa
+    
+kava:
+	MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str41	;Kazalec na niz
+    MOV D, 780		;Kazalec na celico
+	CALL loop_print
+    RET
+    
+pripravljeno:
+	MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str42	;Kazalec na niz
+    MOV D, 1028		;Kazalec na celico
+	CALL loop_print
+    RET
+
+
+lepdan:
+	MOV A, 1		;Koda za text mode
+    OUT 7			;VIDMODE
+    MOV C, str43	;Kazalec na niz
+    MOV D, 2822		;Kazalec na celico
+	CALL loop_print
+    RET
+    
+smiley:
+	MOV A, 1
+    OUT 7
+    MOV A, 2838
+    OUT 8			
+    MOVB AH, 1	
+    MOVB AL, 255
+    OUT 9
+    RET
+
+;Jakob Beber, 89211306
